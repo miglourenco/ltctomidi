@@ -19,6 +19,13 @@ def _resource(name: str) -> str:
 # On macOS/Linux this env var has no effect; don't set it to avoid spurious warnings.
 if sys.platform == "win32":
     os.environ.setdefault("SD_ENABLE_ASIO", "1")
+    # Set App User Model ID so Windows shows our icon in the taskbar instead of
+    # the generic Python/tkinter feather.
+    try:
+        from ctypes import windll
+        windll.shell32.SetCurrentProcessExplicitAppUserModelID("com.ltctomidi.app")
+    except Exception:
+        pass
 
 import tkinter as tk
 
