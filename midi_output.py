@@ -1,15 +1,17 @@
 """
 MIDI output — two backends, tried in order:
 
-  1. python-rtmidi  (if installed; requires C++ compiler to build from source)
-  2. Windows WinMM  (ctypes → winmm.dll; zero extra dependencies, always works on Windows)
+  1. python-rtmidi  (cross-platform; required on macOS/Linux)
+  2. Windows WinMM  (ctypes → winmm.dll; zero extra dependencies, Windows only)
 
-The WinMM backend is the default on Windows when rtmidi is not installed.
+On macOS/Linux python-rtmidi is the only backend.  Install with:
+    pip install python-rtmidi
+On macOS it uses CoreMIDI under the hood — pair it with the built-in IAC Driver
+(Audio MIDI Setup → IAC Driver → enable).
 """
 from __future__ import annotations
 
 import ctypes
-import ctypes.wintypes
 import sys
 from typing import List, Optional
 
@@ -27,77 +29,72 @@ except ImportError:
     _HAS_RTMIDI = False
 
 
-# ── Windows WinMM availability ────────────────────────────────────────────────
+# ── Windows WinMM (Windows only) ──────────────────────────────────────────────
 
-_winmm: Optional[ctypes.WinDLL] = None   # type: ignore[type-arg]
+_winmm = None  # ctypes.WinDLL handle, or None
 
 if sys.platform == "win32":
+    import ctypes.wintypes as _wintypes
+
     try:
         _winmm = ctypes.WinDLL("winmm")   # type: ignore[assignment]
     except OSError:
         pass
 
+    class _MIDIOUTCAPSA(ctypes.Structure):
+        _fields_ = [
+            ("wMid",            _wintypes.WORD),
+            ("wPid",            _wintypes.WORD),
+            ("vDriverVersion",  ctypes.c_uint32),
+            ("szPname",         ctypes.c_char * 32),
+            ("wTechnology",     _wintypes.WORD),
+            ("wVoices",         _wintypes.WORD),
+            ("wNotes",          _wintypes.WORD),
+            ("wChannelMask",    _wintypes.WORD),
+            ("dwSupport",       _wintypes.DWORD),
+        ]
 
-# ── WinMM helpers ─────────────────────────────────────────────────────────────
+    def _winmm_list_ports() -> List[str]:
+        assert _winmm is not None
+        n: int = _winmm.midiOutGetNumDevs()
+        ports: List[str] = []
+        for i in range(n):
+            caps = _MIDIOUTCAPSA()
+            res = _winmm.midiOutGetDevCapsA(
+                ctypes.c_uint(i),
+                ctypes.byref(caps),
+                ctypes.c_uint(ctypes.sizeof(caps)),
+            )
+            if res == 0:  # MMSYSERR_NOERROR
+                ports.append(caps.szPname.decode("mbcs", errors="replace"))
+        return ports
 
-class _MIDIOUTCAPSA(ctypes.Structure):
-    _fields_ = [
-        ("wMid",            ctypes.wintypes.WORD),
-        ("wPid",            ctypes.wintypes.WORD),
-        ("vDriverVersion",  ctypes.c_uint32),
-        ("szPname",         ctypes.c_char * 32),
-        ("wTechnology",     ctypes.wintypes.WORD),
-        ("wVoices",         ctypes.wintypes.WORD),
-        ("wNotes",          ctypes.wintypes.WORD),
-        ("wChannelMask",    ctypes.wintypes.WORD),
-        ("dwSupport",       ctypes.wintypes.DWORD),
-    ]
-
-
-def _winmm_list_ports() -> List[str]:
-    assert _winmm is not None
-    n: int = _winmm.midiOutGetNumDevs()
-    ports: List[str] = []
-    for i in range(n):
-        caps = _MIDIOUTCAPSA()
-        res = _winmm.midiOutGetDevCapsA(
-            ctypes.c_uint(i),
-            ctypes.byref(caps),
-            ctypes.c_uint(ctypes.sizeof(caps)),
+    def _winmm_open(port_index: int) -> ctypes.c_void_p:
+        assert _winmm is not None
+        handle = ctypes.c_void_p(0)
+        res = _winmm.midiOutOpen(
+            ctypes.byref(handle),
+            ctypes.c_uint(port_index),
+            ctypes.c_size_t(0),
+            ctypes.c_size_t(0),
+            ctypes.c_uint32(0),
         )
-        if res == 0:  # MMSYSERR_NOERROR
-            ports.append(caps.szPname.decode("mbcs", errors="replace"))
-    return ports
+        if res != 0:
+            raise MidiError(f"midiOutOpen failed — MMRESULT={res:#06x}")
+        return handle
 
+    def _winmm_short_msg(handle: ctypes.c_void_p, msg: int) -> None:
+        assert _winmm is not None
+        res = _winmm.midiOutShortMsg(handle, ctypes.c_uint32(msg))
+        if res != 0:
+            raise MidiError(f"midiOutShortMsg failed — MMRESULT={res:#06x}")
 
-def _winmm_open(port_index: int) -> ctypes.c_void_p:
-    assert _winmm is not None
-    handle = ctypes.c_void_p(0)
-    res = _winmm.midiOutOpen(
-        ctypes.byref(handle),
-        ctypes.c_uint(port_index),  # device ID
-        ctypes.c_size_t(0),         # dwCallback  (NULL — CALLBACK_NULL)
-        ctypes.c_size_t(0),         # dwInstance  (NULL)
-        ctypes.c_uint32(0),         # fdwOpen     (CALLBACK_NULL = 0)
-    )
-    if res != 0:
-        raise MidiError(f"midiOutOpen failed — MMRESULT={res:#06x}")
-    return handle
-
-
-def _winmm_short_msg(handle: ctypes.c_void_p, msg: int) -> None:
-    assert _winmm is not None
-    res = _winmm.midiOutShortMsg(handle, ctypes.c_uint32(msg))
-    if res != 0:
-        raise MidiError(f"midiOutShortMsg failed — MMRESULT={res:#06x}")
-
-
-def _winmm_close(handle: ctypes.c_void_p) -> None:
-    if _winmm is not None and handle:
-        try:
-            _winmm.midiOutClose(handle)
-        except Exception:
-            pass
+    def _winmm_close(handle: ctypes.c_void_p) -> None:
+        if _winmm is not None and handle:
+            try:
+                _winmm.midiOutClose(handle)
+            except Exception:
+                pass
 
 
 # ── MidiOutput ────────────────────────────────────────────────────────────────
@@ -166,6 +163,11 @@ class MidiOutput:
             self._winmm_handle = _winmm_open(port_index)
             self._backend = "winmm"
         else:
+            if sys.platform == "darwin":
+                raise MidiError(
+                    "python-rtmidi is required on macOS.\n"
+                    "Install it with:  pip install python-rtmidi"
+                )
             raise MidiError(
                 "No MIDI backend available.\n"
                 "Install python-rtmidi or run on Windows (WinMM is built-in)."
@@ -203,7 +205,6 @@ class MidiOutput:
             except Exception as exc:
                 raise MidiError(f"Send failed: {exc}") from exc
         elif self._backend == "winmm":
-            # Pack short message: status | (data1 << 8)
             _winmm_short_msg(self._winmm_handle, status | (prog << 8))
 
     def send_all_notes_off(self, channel: int = 1) -> None:

@@ -10,6 +10,7 @@ from __future__ import annotations
 import os
 import queue
 import re
+import sys
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 from typing import Optional
@@ -57,8 +58,8 @@ _ST_BG   = "#7F1D1D"   # Stop — red
 _ST_ABG  = "#991B1B"
 _ST_DIS  = "#3D1010"   # Stop disabled
 
-_F_UI    = ("Segoe UI", 9)
-_F_UIB   = ("Segoe UI", 9, "bold")
+_F_UI    = ("Segoe UI", 9)    if sys.platform == "win32" else ("Helvetica Neue", 11)
+_F_UIB   = ("Segoe UI", 9, "bold") if sys.platform == "win32" else ("Helvetica Neue", 11, "bold")
 _F_TC    = ("Courier New", 52, "bold")
 _F_FPS   = ("Courier New", 11)
 _F_MONO  = ("Courier New", 10)
