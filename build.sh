@@ -4,11 +4,11 @@
 set -e
 
 echo "=== Installing / upgrading dependencies ==="
-pip install --upgrade sounddevice numpy python-rtmidi pyinstaller
+python3 -m pip install --upgrade sounddevice numpy python-rtmidi pyinstaller
 
 echo ""
 echo "=== Building LTCtoMIDI.app ==="
-python -m PyInstaller --clean ltctomidi_macos.spec
+python3 -m PyInstaller --clean ltctomidi_macos.spec
 
 echo ""
 echo "=== Done! ==="
