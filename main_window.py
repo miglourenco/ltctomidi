@@ -66,10 +66,74 @@ _F_MONO  = ("Courier New", 10)
 
 
 # ── Button factory ────────────────────────────────────────────────────────────
+# On macOS, tk.Button ignores bg/fg (native Aqua style always renders white).
+# _FlatButton is a Label-based widget that respects colors on all platforms.
+
+class _FlatButton(tk.Label):
+    """tk.Label acting as a flat button — bg/fg respected on macOS."""
+
+    def __init__(self, parent, *, text, command,
+                 bg, fg, activebackground, activeforeground,
+                 font, padx=8, pady=3, width=None):
+        kw: dict = dict(text=text, bg=bg, fg=fg, font=font,
+                        cursor="hand2", padx=padx, pady=pady,
+                        relief="flat", bd=0, highlightthickness=0)
+        if width is not None:
+            kw["width"] = width
+        super().__init__(parent, **kw)
+        self._cmd          = command
+        self._bg_on        = bg
+        self._fg_on        = fg
+        self._bg_active    = activebackground
+        self._fg_active    = activeforeground
+        self._disabled     = False
+        self.bind("<ButtonPress-1>",   self._press)
+        self.bind("<ButtonRelease-1>", self._release)
+        self.bind("<Enter>",           self._enter)
+        self.bind("<Leave>",           self._leave)
+
+    def _press(self, _e):
+        if not self._disabled:
+            tk.Label.config(self, bg=self._bg_active, fg=self._fg_active)
+            self._cmd()
+
+    def _release(self, _e):
+        if not self._disabled:
+            tk.Label.config(self, bg=self._bg_on, fg=self._fg_on)
+
+    def _enter(self, _e):
+        if not self._disabled:
+            tk.Label.config(self, bg=self._bg_active, fg=self._fg_active)
+
+    def _leave(self, _e):
+        tk.Label.config(self, bg=self._bg_on, fg=self._fg_on)
+
+    def config(self, **kw):  # type: ignore[override]
+        if "state" in kw:
+            state = kw.pop("state")
+            self._disabled = (state == "disabled")
+            tk.Label.config(self, cursor="arrow" if self._disabled else "hand2")
+        if "bg" in kw:
+            self._bg_on = kw["bg"]
+        if "fg" in kw:
+            self._fg_on = kw["fg"]
+        if kw:
+            tk.Label.config(self, **kw)
+
+    configure = config   # alias expected by tkinter
+
 
 def _btn(parent, text, cmd, *,
          bg=_BTN_BG, fg=_BTN_FG, abg=_BTN_ABG,
          width=None, font=_F_UI, px=8, py=3):
+    # macOS: tk.Button ignores bg/fg (native Aqua rendering) → use _FlatButton.
+    # Windows/Linux: tk.Button respects colors and has keyboard focus → keep it.
+    if sys.platform == "darwin":
+        return _FlatButton(
+            parent, text=text, command=cmd,
+            bg=bg, fg=fg, activebackground=abg, activeforeground=fg,
+            font=font, padx=px, pady=py, width=width,
+        )
     kw = dict(text=text, command=cmd, bg=bg, fg=fg,
               activebackground=abg, activeforeground=fg,
               relief="flat", font=font, cursor="hand2",

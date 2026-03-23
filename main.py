@@ -3,10 +3,13 @@ LTC → MIDI Program Change
 Entry point.
 """
 import os
+import sys
 
 # Must be set BEFORE sounddevice is imported anywhere.
-# Tells sounddevice to load libportaudio64bit-asio.dll instead of the default DLL.
-os.environ.setdefault("SD_ENABLE_ASIO", "1")
+# Tells sounddevice to load the ASIO-enabled PortAudio DLL (Windows only).
+# On macOS/Linux this env var has no effect; don't set it to avoid spurious warnings.
+if sys.platform == "win32":
+    os.environ.setdefault("SD_ENABLE_ASIO", "1")
 
 import tkinter as tk
 

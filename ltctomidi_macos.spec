@@ -30,6 +30,8 @@ a = Analysis(
     datas=_sd_datas + _np_datas + _icns_src,
     hiddenimports=_np_hidden + [
         'sounddevice',
+        # rtmidi is still imported as a fallback but the primary macOS backend is
+        # CoreMIDI via ctypes (avoids GIL crash on Python 3.12+).
         'rtmidi',
     ],
     hookspath=[],

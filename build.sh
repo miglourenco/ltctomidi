@@ -4,6 +4,8 @@
 set -e
 
 echo "=== Installing / upgrading dependencies ==="
+# python-rtmidi is kept as a fallback; macOS uses CoreMIDI directly via ctypes
+# (avoids a fatal GIL crash with python-rtmidi on Python 3.12+).
 python3 -m pip install --upgrade sounddevice numpy python-rtmidi pyinstaller
 
 echo ""
