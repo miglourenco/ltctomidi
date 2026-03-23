@@ -1,12 +1,17 @@
 # LTC to MIDI Program Change
 
-A Windows desktop application that reads **SMPTE LTC (Linear Timecode)** from an audio input and fires **MIDI Program Change** messages at defined timecodes — ideal for automating snapshots on a **Waves LV1** mixing desk (or any MIDI-controllable system) during live shows.
+<p align="center">
+  <img src="logo.png" alt="LTC to MIDI logo" width="600"/>
+</p>
+
+A Windows and macOS desktop application that reads **SMPTE LTC (Linear Timecode)** from an audio input and fires **MIDI Program Change** messages at defined timecodes — ideal for automating snapshots on a **Waves LV1** mixing desk (or any MIDI-controllable system) during live shows.
 
 ---
 
 ## Features
 
-- Reads LTC from any audio input (ASIO, WDM, MME)
+- **Windows and macOS** — single codebase, native feel on both platforms
+- Reads LTC from any audio input (ASIO, WDM, MME on Windows — CoreAudio on macOS)
 - **ASIO support** — works with SoundGrid Driver and other ASIO interfaces
 - Software BMC/LTC decoder — no external libraries needed
 - Fires MIDI Program Change on any channel (1–16) at frame-accurate timecodes

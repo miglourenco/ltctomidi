@@ -12,7 +12,7 @@ import sys
 from pathlib import Path
 from PIL import Image
 
-SRC = "Gemini_Generated_Image_nvkb2xnvkb2xnvkb.png"
+SRC = "logo.png"
 
 img = Image.open(SRC).convert("RGBA")
 
