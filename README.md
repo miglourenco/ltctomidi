@@ -10,7 +10,7 @@ A Windows desktop application that reads **SMPTE LTC (Linear Timecode)** from an
 - **ASIO support** — works with SoundGrid Driver and other ASIO interfaces
 - Software BMC/LTC decoder — no external libraries needed
 - Fires MIDI Program Change on any channel (1–16) at frame-accurate timecodes
-- Supports 24, 25, 29.97 and 30 fps
+- Supports 24, 25, 29.97, 30, 50, 59.94 and 60 fps
 - Drop-frame timecode support
 - Cue list saved as JSON — easy to edit and share
 - TAP button to capture live timecode into a cue
@@ -107,6 +107,12 @@ For **SoundGrid Driver** or any other ASIO interface:
 - The **SoundGrid Driver Control Panel** must be running before you open the app (ASIO drivers register dynamically)
 - Select the ASIO device from the **Audio Input** dropdown
 - If the device does not appear, click **↺** to refresh the list
+
+### High frame rate (50 / 59.94 / 60 fps)
+
+50 and 60 fps LTC uses a doubled bit rate — the signal runs at twice the speed of 25/30 fps LTC, while frame numbers still encode the base-rate count (0–24 or 0–29).
+
+> **Use 96 kHz sample rate** for reliable decoding at 50 fps and above. At 48 kHz the half-bit period drops to ~6 samples, which leaves very little margin for jitter. Select `96000` in the **SR** dropdown before starting.
 
 ---
 

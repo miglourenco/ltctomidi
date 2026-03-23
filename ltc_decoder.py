@@ -167,6 +167,10 @@ class LTCDecoder:
         self._signal_present: bool = False
         self._no_xing_count: int = 0
 
+        # Stale-calibration detection: counts crossings that all look like gaps
+        # (interval >> half_period).  If too many pile up the calibration is wrong.
+        self._consecutive_gaps: int = 0
+
     # ── sample-level processing ───────────────────────────────────────────────
 
     def _step(self, s: float) -> Optional[Timecode]:
@@ -221,6 +225,14 @@ class LTCDecoder:
             self._pending_short = False
             self._bits.clear()
             self._sync_reg = 0
+            # Count consecutive gap-only crossings.  If every crossing looks
+            # like a gap the calibration is stale (e.g. locked on noise floor
+            # before LTC started).  Force a fresh calibration.
+            self._consecutive_gaps += 1
+            if self._consecutive_gaps > 32:
+                self._calibrated = False
+                self._calib_buf.clear()
+                self._consecutive_gaps = 0
             return None
 
         if interval <= threshold:
@@ -278,13 +290,23 @@ class LTCDecoder:
                 mean_iv = float(sum(intervals)) / len(intervals)
                 self._half_period = mean_iv / 2.0
 
+            # Sanity check: minimum plausible half_period is ~4.6 samples
+            # (60 fps at 44.1 kHz).  Smaller values mean the buffer was filled
+            # with noise crossings from a silent channel — reject and retry.
+            if self._half_period < 4.0:
+                self._half_period = None
+                self._calib_buf.clear()
+                return
+
             self._calibrated = True
             self._calib_buf.clear()
             self._pending_short = False
+            self._consecutive_gaps = 0
 
     # ── bit-level processing ──────────────────────────────────────────────────
 
     def _push_bit(self, bit: int) -> Optional[Timecode]:
+        self._consecutive_gaps = 0   # valid bit received — calibration is working
         # Update 16-bit sync register: shift left, insert new bit at LSB
         self._sync_reg = ((self._sync_reg << 1) | bit) & 0xFFFF
 
@@ -341,9 +363,26 @@ class LTCDecoder:
         if half_period <= 0:
             return 25.0
         fps_raw = self.sample_rate / (80.0 * 2.0 * half_period)
-        # Snap to nearest known frame rate
-        known_rates = (24.0, 25.0, 29.97, 30.0)
+        # Snap to nearest known frame rate.
+        # High rates (50/60) use doubled-rate LTC: the signal runs at 2×
+        # the base rate but frame numbers still encode 0–24/0–29.
+        # Reliable detection at 50 fps+ requires a 96 kHz sample rate.
+        known_rates = (24.0, 25.0, 29.97, 30.0, 50.0, 59.94, 60.0)
         nearest = min(known_rates, key=lambda x: abs(fps_raw - x))
-        if abs(fps_raw - nearest) < 1.5:
+        if abs(fps_raw - nearest) < 1.0:
             return nearest
+
+        # fps_raw doesn't match any standard rate — the configured sample_rate
+        # may differ from the actual hardware rate (common with ASIO drivers
+        # that report a static default before initialisation).
+        # Try common sample rates; if one gives a clean standard fps, adopt it.
+        for test_sr in (48000, 44100, 96000, 88200):
+            if test_sr == self.sample_rate:
+                continue
+            test_fps = test_sr / (80.0 * 2.0 * half_period)
+            test_nearest = min(known_rates, key=lambda x: abs(test_fps - x))
+            if abs(test_fps - test_nearest) < 1.0:
+                self.sample_rate = test_sr  # self-correct for ASIO rate mismatch
+                return test_nearest
+
         return round(fps_raw, 2)

@@ -144,6 +144,13 @@ class CueDialog(tk.Toplevel):
 
         self.bind("<Return>", lambda _: self._ok())
         self.bind("<Escape>", lambda _: self.destroy())
+
+        # Centre on parent
+        self.update_idletasks()
+        x = parent.winfo_rootx() + (parent.winfo_width()  - self.winfo_width())  // 2
+        y = parent.winfo_rooty() + (parent.winfo_height() - self.winfo_height()) // 2
+        self.geometry(f"+{x}+{y}")
+
         self.wait_window()
 
     def _ok(self) -> None:
@@ -195,6 +202,7 @@ class MainWindow:
         self._last_tc_time:  int                = 0
         self._audio_devices: list               = []
         self._midi_ports:    list               = []
+        self._detected_sr:   int                = settings.sample_rate
 
         self._apply_theme()
         self._build_ui()
@@ -370,14 +378,17 @@ class MainWindow:
         self._ch_var = tk.IntVar(value=self.settings.audio_channel)
         ttk.Spinbox(ar, from_=1, to=64, textvariable=self._ch_var,
                     width=5).pack(side="left", padx=4)
-        tk.Label(ar, text="SR", bg=_BG_PAN, fg=_FG_HEAD,
-                 font=_F_UI).pack(side="left", padx=(8, 4))
+        self._sr_force_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(ar, text="SR Force:", variable=self._sr_force_var,
+                        command=self._on_sr_force_toggle).pack(side="left", padx=(8, 2))
         self._sr_var = tk.StringVar(value=str(self.settings.sample_rate))
-        ttk.Combobox(ar, textvariable=self._sr_var,
-                     values=["44100", "48000", "96000"],
-                     width=7, state="readonly").pack(side="left")
+        self._sr_combo = ttk.Combobox(ar, textvariable=self._sr_var,
+                                      values=["44100", "48000", "96000"],
+                                      width=7, state="disabled")
+        self._sr_combo.pack(side="left")
         _btn(ar, "↺", self._refresh_audio_devices, width=2,
              px=5, py=1).pack(side="left", padx=(6, 0))
+        self._audio_combo.bind("<<ComboboxSelected>>", self._on_audio_device_changed)
 
         # MIDI row
         mr = tk.Frame(left, bg=_BG_PAN)
@@ -569,6 +580,7 @@ class MainWindow:
             (i for i, d in enumerate(self._audio_devices)
              if "asio" in d["hostapi"].lower()), None)
         self._audio_combo.current(asio_idx if asio_idx is not None else 0)
+        self._on_audio_device_changed()
 
     def _refresh_midi_ports(self) -> None:
         self._midi_ports = MidiOutput.list_ports()
@@ -591,6 +603,22 @@ class MainWindow:
                     break
         if saved_midi and saved_midi in self._midi_ports:
             self._midi_combo.current(self._midi_ports.index(saved_midi))
+        self._on_audio_device_changed()
+
+    def _on_audio_device_changed(self, event=None) -> None:
+        idx = self._audio_combo.current()
+        if idx < 0 or idx >= len(self._audio_devices):
+            return
+        self._detected_sr = int(self._audio_devices[idx]["default_samplerate"])
+
+    def _on_sr_force_toggle(self) -> None:
+        state = "readonly" if self._sr_force_var.get() else "disabled"
+        self._sr_combo.config(state=state)
+
+    def _get_sample_rate(self) -> int:
+        if self._sr_force_var.get():
+            return int(self._sr_var.get())
+        return self._detected_sr
 
     # ══════════════════════════════════════════════════════════════════════════
     # Start / Stop
@@ -618,7 +646,7 @@ class MainWindow:
 
         dev = self._audio_devices[audio_idx]
         channel = self._ch_var.get() - 1   # 0-based
-        sr = int(self._sr_var.get())
+        sr = self._get_sample_rate()
         try:
             self._audio.configure(dev["index"], channel, sr)
             self._audio.start()
@@ -906,7 +934,7 @@ class MainWindow:
         if 0 <= midi_idx < len(self._midi_ports):
             self.settings.midi_port = self._midi_ports[midi_idx]
         self.settings.audio_channel    = self._ch_var.get()
-        self.settings.sample_rate      = int(self._sr_var.get())
+        self.settings.sample_rate      = int(self._sr_var.get())  # saves forced value
         self.settings.tolerance_frames = self._tol_var.get()
         self.settings.last_cue_file    = self._current_file or ""
         self.settings.save()

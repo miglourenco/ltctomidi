@@ -110,6 +110,15 @@ class AudioCapture:
         self._running = True
         self._stream.start()
 
+        # For ASIO devices the driver controls the sample rate; the rate we
+        # requested may differ from what the stream actually opened at.
+        # Re-initialise the decoder with the real rate if needed.
+        actual_sr = int(self._stream.samplerate)
+        if actual_sr != self._sample_rate:
+            self._sample_rate = actual_sr
+            self._decoder = LTCDecoder(actual_sr)
+            self._decoder.on_timecode = self._on_timecode
+
     def stop(self) -> None:
         self._running = False
         if self._stream is not None:
@@ -126,6 +135,13 @@ class AudioCapture:
     @property
     def is_running(self) -> bool:
         return self._running
+
+    @property
+    def actual_sample_rate(self) -> Optional[int]:
+        """The sample rate the stream actually opened at (may differ from configured rate for ASIO)."""
+        if self._stream is not None:
+            return int(self._stream.samplerate)
+        return None
 
     @property
     def signal_present(self) -> bool:
