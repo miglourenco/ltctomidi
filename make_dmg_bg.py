@@ -1,72 +1,83 @@
 """
 Generate the DMG installer background (600 x 400 px).
+Icons in create-dmg are placed at (150, 200) and (450, 200) — 100 px size.
+Logo lives in the top ~165 px; the lower ~235 px is the drag zone.
 Run once:  python3 make_dmg_bg.py
 """
 from PIL import Image, ImageDraw, ImageFont
-import math, os
+import os
 
 W, H = 600, 400
-BG      = (18,  18,  18)
-PANEL   = (30,  30,  30)
-ACCENT  = (0,   200, 65)     # green matching the TC display
-DIM     = (80,  80,  80)
-WHITE   = (200, 200, 200)
-ARROW   = (60,  60,  60)
 
-img  = Image.new("RGB", (W, H), BG)
+CYAN   = (0,   200, 230)
+ORANGE = (255, 130, 30)
+WHITE  = (230, 230, 230)
+DIM    = (100, 100, 100)
+
+img  = Image.new("RGBA", (W, H), (0, 0, 0, 255))
 draw = ImageDraw.Draw(img)
 
-# ── subtle top gradient band ──────────────────────────────────────────────────
-for y in range(60):
-    alpha = int(18 + (40 - 18) * (1 - y / 60))
-    draw.line([(0, y), (W, y)], fill=(alpha, alpha, alpha))
+# ── logo in top band (scaled to 165 px tall) ──────────────────────────────────
+LOGO_H  = 165
+logo_raw = Image.open(os.path.join(os.path.dirname(__file__), "logo.png")).convert("RGBA")
+logo_w   = int(logo_raw.width * LOGO_H / logo_raw.height)
+logo     = logo_raw.resize((logo_w, LOGO_H), Image.LANCZOS)
+lx = (W - logo_w) // 2
+img.paste(logo, (lx, 0), logo)
 
-# ── title ─────────────────────────────────────────────────────────────────────
+# Fade the logo bottom edge into black
+fade_start = LOGO_H - 40
+for y in range(fade_start, LOGO_H + 10):
+    t     = (y - fade_start) / 50
+    alpha = int(min(t, 1.0) * 255)
+    draw.line([(0, y), (W, y)], fill=(0, 0, 0, alpha))
+
+draw = ImageDraw.Draw(img)   # refresh after paste
+
+# ── thin divider ──────────────────────────────────────────────────────────────
+DIV_Y = LOGO_H + 4
+draw.rectangle([50, DIV_Y, W - 50, DIV_Y], fill=(35, 35, 35, 255))
+
+# ── fonts ─────────────────────────────────────────────────────────────────────
 try:
-    font_title = ImageFont.truetype("/System/Library/Fonts/HelveticaNeue.ttc", 22)
-    font_sub   = ImageFont.truetype("/System/Library/Fonts/HelveticaNeue.ttc", 13)
-    font_hint  = ImageFont.truetype("/System/Library/Fonts/HelveticaNeue.ttc", 12)
+    font_label = ImageFont.truetype("/System/Library/Fonts/HelveticaNeue.ttc", 13)
+    font_hint  = ImageFont.truetype("/System/Library/Fonts/HelveticaNeue.ttc", 11)
 except Exception:
-    font_title = font_sub = font_hint = ImageFont.load_default()
+    font_label = font_hint = ImageFont.load_default()
 
-title = "LTC → MIDI Program Change"
-bbox  = draw.textbbox((0, 0), title, font=font_title)
-tw    = bbox[2] - bbox[0]
-draw.text(((W - tw) // 2, 22), title, font=font_title, fill=WHITE)
+# ── labels under the icon drop zones (icons centred at y=200) ────────────────
+LABEL_Y = 295   # below 100-px icons whose centres are at y=200
 
-# thin accent line under title
-draw.rectangle([W // 2 - 140, 54, W // 2 + 140, 55], fill=ACCENT)
-
-# ── drop-zone labels ──────────────────────────────────────────────────────────
-# app label (left icon area, x≈150)
 lbl1 = "LTCtoMIDI"
-b1   = draw.textbbox((0, 0), lbl1, font=font_sub)
-draw.text((150 - (b1[2]-b1[0])//2, 290), lbl1, font=font_sub, fill=DIM)
+b1   = draw.textbbox((0, 0), lbl1, font=font_label)
+draw.text((150 - (b1[2] - b1[0]) // 2, LABEL_Y), lbl1,
+          font=font_label, fill=CYAN + (255,))
 
-# applications label (right icon area, x≈450)
 lbl2 = "Applications"
-b2   = draw.textbbox((0, 0), lbl2, font=font_sub)
-draw.text((450 - (b2[2]-b2[0])//2, 290), lbl2, font=font_sub, fill=DIM)
+b2   = draw.textbbox((0, 0), lbl2, font=font_label)
+draw.text((450 - (b2[2] - b2[0]) // 2, LABEL_Y), lbl2,
+          font=font_label, fill=ORANGE + (255,))
 
-# ── arrow ─────────────────────────────────────────────────────────────────────
-ax1, ax2, ay = 215, 375, 210
-shaft_y = ay
-# shaft
-draw.rectangle([ax1, shaft_y - 2, ax2 - 18, shaft_y + 2], fill=ARROW)
-# arrowhead (triangle pointing right)
-pts = [
-    (ax2,      ay),
-    (ax2 - 18, ay - 10),
-    (ax2 - 18, ay + 10),
-]
-draw.polygon(pts, fill=ARROW)
+# ── cyan → orange gradient arrow ─────────────────────────────────────────────
+AX1, AX2, AY = 218, 372, 207
+for i in range(AX2 - AX1 - 18):
+    t = i / (AX2 - AX1 - 18)
+    r = int(CYAN[0] + (ORANGE[0] - CYAN[0]) * t)
+    g = int(CYAN[1] + (ORANGE[1] - CYAN[1]) * t)
+    b = int(CYAN[2] + (ORANGE[2] - CYAN[2]) * t)
+    draw.line([(AX1 + i, AY - 2), (AX1 + i, AY + 2)], fill=(r, g, b, 255))
 
-# ── hint text ─────────────────────────────────────────────────────────────────
-hint = "Drag to install"
+# arrowhead
+draw.polygon([(AX2, AY), (AX2 - 16, AY - 9), (AX2 - 16, AY + 9)],
+             fill=ORANGE + (255,))
+
+# ── hint ─────────────────────────────────────────────────────────────────────
+hint = "drag to install"
 bh   = draw.textbbox((0, 0), hint, font=font_hint)
-draw.text(((W - (bh[2]-bh[0])) // 2, 350), hint, font=font_hint, fill=(55, 55, 55))
+draw.text(((W - (bh[2] - bh[0])) // 2, H - 18),
+          hint, font=font_hint, fill=(50, 50, 50, 255))
 
-# ── save ──────────────────────────────────────────────────────────────────────
+# ── save ─────────────────────────────────────────────────────────────────────
 out = os.path.join(os.path.dirname(__file__), "dmg_background.png")
-img.save(out, "PNG")
-print(f"Saved {W}×{H} background → {out}")
+img.convert("RGB").save(out, "PNG")
+print(f"Saved {W}×{H} → {out}")
