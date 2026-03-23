@@ -10,7 +10,7 @@ python3 -m pip install --upgrade sounddevice numpy python-rtmidi pyinstaller
 
 echo ""
 echo "=== Building LTCtoMIDI.app ==="
-python3 -m PyInstaller --clean ltctomidi_macos.spec
+python3 -m PyInstaller --clean -y ltctomidi_macos.spec
 
 echo ""
 echo "=== Done! ==="
