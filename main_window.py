@@ -14,7 +14,13 @@ import re
 import sys
 import threading
 import tkinter as tk
+import ssl
 import urllib.request
+try:
+    import certifi as _certifi
+    _SSL_CTX = ssl.create_default_context(cafile=_certifi.where())
+except Exception:
+    _SSL_CTX = None
 import webbrowser
 from tkinter import filedialog, messagebox, ttk
 from typing import Optional
@@ -959,7 +965,7 @@ class MainWindow:
                     _RELEASES_API,
                     headers={"User-Agent": f"LTCtoMIDI/{_VERSION}"},
                 )
-                with urllib.request.urlopen(req, timeout=6) as resp:
+                with urllib.request.urlopen(req, timeout=6, context=_SSL_CTX) as resp:
                     data = json.loads(resp.read())
                 tag = data.get("tag_name", "").lstrip("v")
                 url = data.get("html_url", _RELEASES_URL)
