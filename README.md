@@ -70,7 +70,9 @@ Smart App Control does not have a "Run anyway" option. To run unsigned apps you 
 2. Click **Smart App Control settings**
 3. Set it to **Off**
 
-> ⚠️ Smart App Control cannot be re-enabled without reinstalling Windows. We are working on obtaining a code signing certificate to eliminate these warnings entirely.
+> ⚠️ Smart App Control cannot be re-enabled without reinstalling Windows.
+
+> 🔐 A code signing certificate application has been submitted to [SignPath.io](https://signpath.io) under their open-source programme. Once approved, future releases will be signed and will not trigger any security warnings on Windows or macOS.
 
 ---
 
