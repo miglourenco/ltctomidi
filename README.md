@@ -54,14 +54,23 @@ macOS Gatekeeper blocks apps from unidentified developers by default.
 
 ### Windows
 
-Windows SmartScreen may block the exe because it is downloaded from the internet.
+Windows may block the exe depending on your security settings.
 
+**Option A — Unblock in Properties** (works on most systems):
 1. Right-click `LTCtoMIDI.exe` → **Properties**
 2. At the bottom, tick **Unblock** → click **OK**
 3. Run the exe normally
 
-If SmartScreen still appears when launching:
-- Click **More info** → **Run anyway**
+**Option B — SmartScreen warning** (click More info → Run anyway):
+If a blue SmartScreen dialog appears when launching, click **More info** then **Run anyway**.
+
+**Option C — Windows 11 Smart App Control** (most restrictive):
+Smart App Control does not have a "Run anyway" option. To run unsigned apps you need to disable it:
+1. Open **Windows Security → App & browser control**
+2. Click **Smart App Control settings**
+3. Set it to **Off**
+
+> ⚠️ Smart App Control cannot be re-enabled without reinstalling Windows. We are working on obtaining a code signing certificate to eliminate these warnings entirely.
 
 ---
 
