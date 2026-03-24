@@ -27,8 +27,41 @@ A Windows and macOS desktop application that reads **SMPTE LTC (Linear Timecode)
 
 ## Download
 
-Go to the [Releases](../../releases) page and download `LTCtoMIDI.exe`.
-No installation required — just run the `.exe`.
+Go to the [Releases](../../releases) page and download the file for your platform:
+
+| Platform | File |
+|----------|------|
+| Windows  | `LTCtoMIDI.exe` — no installation required |
+| macOS    | `LTCtoMIDI.dmg` — open and drag to Applications |
+
+---
+
+## First Launch — Security Warnings
+
+The app is not yet signed with a commercial certificate. Both Windows and macOS will warn you the first time you run it.
+
+### macOS
+
+macOS Gatekeeper blocks apps from unidentified developers by default.
+
+1. Try to open the app — Gatekeeper will block it
+2. Open **System Settings → Privacy & Security**
+3. Scroll down to the security section — you will see a message about LTCtoMIDI being blocked
+4. Click **Open Anyway**
+5. Confirm by clicking **Open** in the dialog that appears
+
+> After the first authorisation the app opens normally every time.
+
+### Windows
+
+Windows SmartScreen may block the exe because it is downloaded from the internet.
+
+1. Right-click `LTCtoMIDI.exe` → **Properties**
+2. At the bottom, tick **Unblock** → click **OK**
+3. Run the exe normally
+
+If SmartScreen still appears when launching:
+- Click **More info** → **Run anyway**
 
 ---
 
