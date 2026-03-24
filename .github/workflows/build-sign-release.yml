@@ -1,0 +1,54 @@
+name: Build, Sign & Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  id-token: write   # required by SignPath to verify build provenance
+  contents: write   # required to upload release assets
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: python -m pip install --upgrade sounddevice numpy pyinstaller
+
+      - name: Build exe
+        run: python -m PyInstaller --clean ltctomidi.spec
+
+      - name: Upload unsigned exe
+        id: upload-unsigned
+        uses: actions/upload-artifact@v4
+        with:
+          name: LTCtoMIDI-unsigned
+          path: dist/LTCtoMIDI.exe
+
+      - name: Sign with SignPath
+        uses: signpath/github-action-submit-signing-request@v1
+        with:
+          api-token:            ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id:      ${{ secrets.SIGNPATH_ORGANIZATION_ID }}
+          project-slug:         LTCtoMIDI
+          signing-policy-slug:  LTCtoMIDI
+          artifact-configuration-slug: initial-version
+          github-artifact-id:   ${{ steps.upload-unsigned.outputs.artifact-id }}
+          wait-for-completion:  true
+          output-artifact-directory: dist-signed
+
+      - name: Upload signed exe to release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist-signed/LTCtoMIDI.exe
+          fail_on_unmatched_files: true
