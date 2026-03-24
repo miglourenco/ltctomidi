@@ -19,6 +19,9 @@ _sd_bins  = collect_dynamic_libs('sounddevice')
 # ── numpy: collect everything (avoids missing-import errors on numpy 2.x) ────
 _np_datas, _np_bins, _np_hidden = collect_all('numpy')
 
+# ── certifi: CA bundle for SSL in update checker ──────────────────────────────
+_certifi_datas = collect_data_files('certifi')
+
 # ── optional icon ─────────────────────────────────────────────────────────────
 _ico_src  = [('ltctomidi.ico', '.')] if os.path.exists('ltctomidi.ico') else []
 _ico_path = 'ltctomidi.ico'          if os.path.exists('ltctomidi.ico') else None
@@ -29,7 +32,7 @@ a = Analysis(
     ['main.py'],
     pathex=['.'],
     binaries=_sd_bins + _np_bins,
-    datas=_sd_datas + _np_datas + _ico_src,
+    datas=_sd_datas + _np_datas + _certifi_datas + _ico_src,
     hiddenimports=_np_hidden + [
         'sounddevice',
         'ctypes',

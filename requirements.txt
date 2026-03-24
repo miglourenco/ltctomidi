@@ -1,5 +1,6 @@
 sounddevice>=0.4.6
 numpy>=1.24.0
+certifi>=2024.0.0
 
 # python-rtmidi is OPTIONAL on Windows.
 # The app falls back to the built-in WinMM API (no compiler needed).
