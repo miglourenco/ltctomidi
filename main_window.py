@@ -7,11 +7,15 @@ queue.Queue (timecode_queue).
 """
 from __future__ import annotations
 
+import json
 import os
 import queue
 import re
 import sys
+import threading
 import tkinter as tk
+import urllib.request
+import webbrowser
 from tkinter import filedialog, messagebox, ttk
 from typing import Optional
 
@@ -21,6 +25,12 @@ from ltc_decoder import Timecode
 from midi_output import MidiError, MidiOutput
 from models import AppSettings, Cue, CueList
 
+
+# ── Version / update check ────────────────────────────────────────────────────
+
+_VERSION      = "1.2.0"
+_RELEASES_API = "https://api.github.com/repos/miglourenco/ltctomidi/releases/latest"
+_RELEASES_URL = "https://github.com/miglourenco/ltctomidi/releases"
 
 # ── Colour palette ────────────────────────────────────────────────────────────
 
@@ -281,6 +291,9 @@ class MainWindow:
         if settings.last_cue_file and os.path.isfile(settings.last_cue_file):
             self._load_cue_file(settings.last_cue_file)
 
+        # Auto-check for updates on startup (silent if already up to date)
+        self.root.after(4000, lambda: self._check_updates(silent_if_ok=True))
+
     # ══════════════════════════════════════════════════════════════════════════
     # Theme
     # ══════════════════════════════════════════════════════════════════════════
@@ -401,6 +414,11 @@ class MainWindow:
             {"label": "Toggle Enabled",  "command": self._toggle_enabled, "accelerator": "Space"},
             None,
             {"label": "Reset Fired Flags", "command": self._reset_fired},
+        ])
+        _menu("Help", [
+            {"label": "Check for Updates…", "command": self._check_updates},
+            None,
+            {"label": f"About  (v{_VERSION})", "command": self._show_about},
         ])
 
         self.root.config(menu=menubar)
@@ -926,6 +944,68 @@ class MainWindow:
         self._flash_after = self.root.after(
             2000,
             lambda: self._midi_status.config(text=f"● {port}", fg=_FG_OK)
+        )
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # Update check
+    # ══════════════════════════════════════════════════════════════════════════
+
+    def _check_updates(self, silent_if_ok: bool = False) -> None:
+        """Fetch latest release tag from GitHub in a background thread."""
+
+        def _fetch() -> None:
+            try:
+                req = urllib.request.Request(
+                    _RELEASES_API,
+                    headers={"User-Agent": f"LTCtoMIDI/{_VERSION}"},
+                )
+                with urllib.request.urlopen(req, timeout=6) as resp:
+                    data = json.loads(resp.read())
+                tag = data.get("tag_name", "").lstrip("v")
+                url = data.get("html_url", _RELEASES_URL)
+                self.root.after(0, lambda: _show(tag, url, None))
+            except Exception as exc:
+                self.root.after(0, lambda: _show(None, None, str(exc)))
+
+        def _parse(v: str) -> tuple:
+            try:
+                return tuple(int(x) for x in v.split("."))
+            except Exception:
+                return (0,)
+
+        def _show(tag, url, error) -> None:
+            if error:
+                if not silent_if_ok:
+                    messagebox.showerror(
+                        "Update check failed",
+                        f"Could not reach GitHub:\n{error}",
+                        parent=self.root,
+                    )
+                return
+            if _parse(tag) > _parse(_VERSION):
+                if messagebox.askyesno(
+                    "Update available",
+                    f"Version {tag} is available — you have {_VERSION}.\n\nOpen the download page?",
+                    parent=self.root,
+                ):
+                    webbrowser.open(url)
+            elif not silent_if_ok:
+                messagebox.showinfo(
+                    "Up to date",
+                    f"You have the latest version ({_VERSION}).",
+                    parent=self.root,
+                )
+
+        threading.Thread(target=_fetch, daemon=True).start()
+
+    def _show_about(self) -> None:
+        messagebox.showinfo(
+            "About LTC to MIDI",
+            f"LTC → MIDI Program Change\nVersion {_VERSION}\n\n"
+            "Reads SMPTE LTC timecode from any audio input\n"
+            "and fires MIDI Program Changes at defined cues.\n\n"
+            "github.com/miglourenco/ltctomidi",
+            parent=self.root,
         )
 
     # ══════════════════════════════════════════════════════════════════════════
