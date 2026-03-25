@@ -7,6 +7,7 @@ Decoded Timecodes are placed on a queue.Queue for the main thread to consume.
 from __future__ import annotations
 
 import queue
+import sys
 from typing import Any, Dict, List, Optional
 
 import numpy as np
@@ -43,6 +44,38 @@ def list_audio_devices() -> List[Dict[str, Any]]:
 def list_asio_devices() -> List[Dict[str, Any]]:
     """Return only ASIO input devices."""
     return [d for d in list_audio_devices() if "asio" in d["hostapi"].lower()]
+
+
+def get_channel_names(device_index: int, n_channels: int, hostapi: str) -> List[str]:
+    """
+    Return a human-readable label for each input channel.
+
+    ASIO (Windows): queries PaAsio_GetInputChannelName from the PortAudio ASIO DLL.
+    CoreAudio / WDM / MME / all other hosts: returns "Ch 1", "Ch 2", …
+    """
+    if sys.platform == "win32" and "asio" in hostapi.lower():
+        try:
+            import ctypes
+            import sounddevice as _sd
+
+            _pa = ctypes.CDLL(_sd._libname)
+            _pa.PaAsio_GetInputChannelName.restype  = ctypes.c_int
+            _pa.PaAsio_GetInputChannelName.argtypes = [
+                ctypes.c_int,
+                ctypes.c_int,
+                ctypes.POINTER(ctypes.c_char_p),
+            ]
+            names: List[str] = []
+            for i in range(n_channels):
+                ptr = ctypes.c_char_p()
+                err = _pa.PaAsio_GetInputChannelName(device_index, i, ctypes.byref(ptr))
+                label = ptr.value.decode("utf-8", errors="replace") if (err == 0 and ptr.value) else f"Ch {i + 1}"
+                names.append(f"{i + 1} — {label}")
+            return names
+        except Exception:
+            pass
+
+    return [f"Ch {i + 1}" for i in range(n_channels)]
 
 
 # ── AudioCapture ──────────────────────────────────────────────────────────────

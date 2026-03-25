@@ -25,7 +25,7 @@ import webbrowser
 from tkinter import filedialog, messagebox, ttk
 from typing import Optional
 
-from audio_capture import AudioCapture, list_audio_devices
+from audio_capture import AudioCapture, list_audio_devices, get_channel_names
 from cue_engine import CueEngine
 from ltc_decoder import Timecode
 from midi_output import MidiError, MidiOutput
@@ -701,13 +701,13 @@ class MainWindow:
             return
         dev = self._audio_devices[idx]
         self._detected_sr = int(dev["default_samplerate"])
-        # Populate channel dropdown with the device's available input channels
-        max_ch = int(dev["channels"])
-        values = [str(i) for i in range(1, max_ch + 1)]
-        self._ch_combo["values"] = values
-        cur = self._ch_var.get()
-        if cur not in values:
-            self._ch_var.set("1")
+        # Populate channel dropdown with named channels for this device
+        names = get_channel_names(dev["index"], int(dev["channels"]), dev["hostapi"])
+        self._ch_combo["values"] = names
+        # Restore saved channel (1-based → 0-based index), clamp to valid range
+        saved_idx = self.settings.audio_channel - 1
+        saved_idx = max(0, min(saved_idx, len(names) - 1))
+        self._ch_combo.current(saved_idx)
 
     def _on_sr_force_toggle(self) -> None:
         state = "readonly" if self._sr_force_var.get() else "disabled"
@@ -743,7 +743,7 @@ class MainWindow:
             return
 
         dev = self._audio_devices[audio_idx]
-        channel = int(self._ch_var.get()) - 1   # 0-based
+        channel = max(0, self._ch_combo.current())   # 0-based
         sr = self._get_sample_rate()
         try:
             self._audio.configure(dev["index"], channel, sr)
@@ -1093,7 +1093,7 @@ class MainWindow:
         midi_idx = self._midi_combo.current()
         if 0 <= midi_idx < len(self._midi_ports):
             self.settings.midi_port = self._midi_ports[midi_idx]
-        self.settings.audio_channel    = int(self._ch_var.get())
+        self.settings.audio_channel    = max(1, self._ch_combo.current() + 1)
         self.settings.sample_rate      = int(self._sr_var.get())  # saves forced value
         self.settings.tolerance_frames = self._tol_var.get()
         self.settings.last_cue_file    = self._current_file or ""
