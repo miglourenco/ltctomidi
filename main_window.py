@@ -662,14 +662,17 @@ class MainWindow:
         self._audio_combo["values"] = names
         if not names:
             self._audio_combo.set("(no input devices found)")
+            self._ch_combo["values"] = []
             return
         current = self._audio_var.get()
         if current in names:
-            return
-        asio_idx = next(
-            (i for i, d in enumerate(self._audio_devices)
-             if "asio" in d["hostapi"].lower()), None)
-        self._audio_combo.current(asio_idx if asio_idx is not None else 0)
+            # Keep the same device selected but still refresh the channel list
+            self._audio_combo.current(names.index(current))
+        else:
+            asio_idx = next(
+                (i for i, d in enumerate(self._audio_devices)
+                 if "asio" in d["hostapi"].lower()), None)
+            self._audio_combo.current(asio_idx if asio_idx is not None else 0)
         self._on_audio_device_changed()
 
     def _refresh_midi_ports(self) -> None:
