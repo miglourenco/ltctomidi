@@ -46,6 +46,22 @@ def list_asio_devices() -> List[Dict[str, Any]]:
     return [d for d in list_audio_devices() if "asio" in d["hostapi"].lower()]
 
 
+def reinit_portaudio() -> None:
+    """
+    Force PortAudio to re-scan hardware by terminating and re-initialising.
+    Call this before list_audio_devices() when the user clicks Refresh,
+    so changes made in the driver control panel (e.g. SoundGrid channel count)
+    are reflected immediately without restarting the app.
+    Safe to call only when no stream is open.
+    """
+    try:
+        import sounddevice as sd
+        sd._terminate()
+        sd._initialize()
+    except Exception:
+        pass
+
+
 def get_channel_names(device_index: int, n_channels: int, hostapi: str) -> List[str]:
     """
     Return a human-readable label for each input channel.

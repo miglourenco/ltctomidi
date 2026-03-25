@@ -25,7 +25,7 @@ import webbrowser
 from tkinter import filedialog, messagebox, ttk
 from typing import Optional
 
-from audio_capture import AudioCapture, list_audio_devices, get_channel_names
+from audio_capture import AudioCapture, list_audio_devices, get_channel_names, reinit_portaudio
 from cue_engine import CueEngine
 from ltc_decoder import Timecode
 from midi_output import MidiError, MidiOutput
@@ -657,6 +657,8 @@ class MainWindow:
     # ══════════════════════════════════════════════════════════════════════════
 
     def _refresh_audio_devices(self) -> None:
+        if not self._running:
+            reinit_portaudio()   # re-scan hardware (picks up driver config changes)
         self._audio_devices = list_audio_devices()
         names = [f"{d['name']}  [{d['hostapi']}]" for d in self._audio_devices]
         self._audio_combo["values"] = names
