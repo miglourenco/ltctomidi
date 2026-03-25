@@ -34,7 +34,7 @@ from models import AppSettings, Cue, CueList
 
 # ── Version / update check ────────────────────────────────────────────────────
 
-_VERSION      = "1.4.0"
+_VERSION      = "1.5.0"
 _RELEASES_API = "https://api.github.com/repos/miglourenco/ltctomidi/releases/latest"
 _RELEASES_URL = "https://github.com/miglourenco/ltctomidi/releases"
 
