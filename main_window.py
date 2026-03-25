@@ -464,9 +464,10 @@ class MainWindow:
         self._audio_combo.pack(side="left", padx=(4, 8))
         tk.Label(ar, text="Ch", bg=_BG_PAN, fg=_FG_HEAD,
                  font=_F_UI).pack(side="left")
-        self._ch_var = tk.IntVar(value=self.settings.audio_channel)
-        ttk.Spinbox(ar, from_=1, to=64, textvariable=self._ch_var,
-                    width=5).pack(side="left", padx=4)
+        self._ch_var = tk.StringVar(value=str(self.settings.audio_channel))
+        self._ch_combo = ttk.Combobox(ar, textvariable=self._ch_var,
+                                      width=5, state="readonly", font=_F_UI)
+        self._ch_combo.pack(side="left", padx=4)
         self._sr_force_var = tk.BooleanVar(value=False)
         ttk.Checkbutton(ar, text="SR Force:", variable=self._sr_force_var,
                         command=self._on_sr_force_toggle).pack(side="left", padx=(8, 2))
@@ -698,7 +699,15 @@ class MainWindow:
         idx = self._audio_combo.current()
         if idx < 0 or idx >= len(self._audio_devices):
             return
-        self._detected_sr = int(self._audio_devices[idx]["default_samplerate"])
+        dev = self._audio_devices[idx]
+        self._detected_sr = int(dev["default_samplerate"])
+        # Populate channel dropdown with the device's available input channels
+        max_ch = int(dev["channels"])
+        values = [str(i) for i in range(1, max_ch + 1)]
+        self._ch_combo["values"] = values
+        cur = self._ch_var.get()
+        if cur not in values:
+            self._ch_var.set("1")
 
     def _on_sr_force_toggle(self) -> None:
         state = "readonly" if self._sr_force_var.get() else "disabled"
@@ -734,7 +743,7 @@ class MainWindow:
             return
 
         dev = self._audio_devices[audio_idx]
-        channel = self._ch_var.get() - 1   # 0-based
+        channel = int(self._ch_var.get()) - 1   # 0-based
         sr = self._get_sample_rate()
         try:
             self._audio.configure(dev["index"], channel, sr)
@@ -1084,7 +1093,7 @@ class MainWindow:
         midi_idx = self._midi_combo.current()
         if 0 <= midi_idx < len(self._midi_ports):
             self.settings.midi_port = self._midi_ports[midi_idx]
-        self.settings.audio_channel    = self._ch_var.get()
+        self.settings.audio_channel    = int(self._ch_var.get())
         self.settings.sample_rate      = int(self._sr_var.get())  # saves forced value
         self.settings.tolerance_frames = self._tol_var.get()
         self.settings.last_cue_file    = self._current_file or ""
