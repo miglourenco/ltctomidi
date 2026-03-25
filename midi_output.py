@@ -70,7 +70,9 @@ if sys.platform == "darwin":
         _cm.MIDIObjectGetStringProperty.restype = _ci32
         _cm.MIDIClientCreate.restype           = _ci32
         _cm.MIDIOutputPortCreate.restype       = _ci32
+        _cm.MIDISourceCreate.restype           = _ci32
         _cm.MIDISend.restype                   = _ci32
+        _cm.MIDIReceived.restype               = _ci32
 
         # ── MIDIPacket / MIDIPacketList ───────────────────────────────────────
         # CoreMIDI's MIDIPacket is __attribute__((packed)) in <CoreMIDI/MIDIServices.h>.
@@ -107,14 +109,27 @@ if sys.platform == "darwin":
         if _err != 0 or not _cm_port:
             raise RuntimeError(f"MIDIOutputPortCreate failed: {_err}")
 
+        # ── Virtual MIDI source ───────────────────────────────────────────────
+        # Other apps (DAW, LV1, etc.) see "LTC to MIDI" as a MIDI input device
+        # — no loopMIDI or IAC Driver needed.
+        _cm_virtual_src = _cvp(0)
+        _vsn = _cm_cfstr("LTC to MIDI")
+        _cm.MIDISourceCreate(_cm_client, _vsn, _byref(_cm_virtual_src))
+        _cfr.CFRelease(_vsn)
+        # Failure is non-fatal — virtual source will simply not appear in the list.
+
         # ── CoreMIDI helper functions ─────────────────────────────────────────
 
+        def _has_virtual() -> bool:
+            return bool(_cm_virtual_src.value)
+
         def _coremidi_list_ports() -> List[str]:
+            # Virtual source is always first in the list (index 0)
+            result: List[str] = ["LTC to MIDI (virtual)"] if _has_virtual() else []
             n = _cm.MIDIGetNumberOfDestinations()
-            result: List[str] = []
-            prop = _cm_cfstr("name")   # c_void_p
+            prop = _cm_cfstr("name")
             for i in range(n):
-                ep = _cvp(_cm.MIDIGetDestination(i))   # wrap int → c_void_p
+                ep = _cvp(_cm.MIDIGetDestination(i))
                 name_ref = _cvp(0)
                 _cm.MIDIObjectGetStringProperty(ep, prop, _byref(name_ref))
                 result.append(_cm_cfstr_get(name_ref))
@@ -123,9 +138,10 @@ if sys.platform == "darwin":
             _cfr.CFRelease(prop)
             return result
 
-        def _coremidi_get_dest(index: int) -> "_cvp":   # type: ignore[name-defined]
-            # Wrap in c_void_p so the value is passed correctly as a 64-bit pointer.
-            return _cvp(_cm.MIDIGetDestination(index))
+        def _coremidi_get_dest(port_index: int) -> "_cvp":   # type: ignore[name-defined]
+            # Offset by 1 because virtual source occupies index 0
+            real_idx = port_index - (1 if _has_virtual() else 0)
+            return _cvp(_cm.MIDIGetDestination(real_idx))
 
         def _coremidi_send(dest: "_cvp", data: bytes) -> None:   # type: ignore[name-defined]
             pkt = _MIDIPacketList()
@@ -137,6 +153,18 @@ if sys.platform == "darwin":
             err = _cm.MIDISend(_cm_port, dest, _byref(pkt))
             if err != 0:
                 raise MidiError(f"MIDISend failed — OSStatus={err:#010x}")
+
+        def _coremidi_send_virtual(data: bytes) -> None:   # type: ignore[name-defined]
+            """Inject MIDI into our virtual source — received by all listening apps."""
+            pkt = _MIDIPacketList()
+            pkt.numPackets = 1
+            pkt.packet[0].timeStamp = 0
+            pkt.packet[0].length = min(len(data), 256)
+            for i, b in enumerate(data[:256]):
+                pkt.packet[0].data[i] = b
+            err = _cm.MIDIReceived(_cm_virtual_src, _byref(pkt))
+            if err != 0:
+                raise MidiError(f"MIDIReceived failed — OSStatus={err:#010x}")
 
         _HAS_COREMIDI = True
 
@@ -237,6 +265,7 @@ class MidiOutput:
     def __init__(self) -> None:
         self._backend: Optional[str] = None   # "coremidi" | "rtmidi" | "winmm"
         self._coremidi_dest = None             # c_void_p endpoint ref (macOS)
+        self._coremidi_is_virtual: bool = False
         self._rtmidi_out = None
         self._winmm_handle: Optional[ctypes.c_void_p] = None
         self._port_name: Optional[str] = None
@@ -291,7 +320,12 @@ class MidiOutput:
             )
 
         if _HAS_COREMIDI:
-            self._coremidi_dest = _coremidi_get_dest(port_index)
+            if port_index == 0 and _has_virtual():
+                self._coremidi_is_virtual = True
+                self._coremidi_dest = None
+            else:
+                self._coremidi_is_virtual = False
+                self._coremidi_dest = _coremidi_get_dest(port_index)
             self._backend = "coremidi"
         elif _HAS_RTMIDI:
             out = _rtmidi.MidiOut()     # type: ignore[union-attr]
@@ -313,6 +347,7 @@ class MidiOutput:
     def close(self) -> None:
         if self._backend == "coremidi":
             self._coremidi_dest = None
+            self._coremidi_is_virtual = False
         elif self._backend == "rtmidi" and self._rtmidi_out is not None:
             try:
                 self._rtmidi_out.close_port()
@@ -338,7 +373,10 @@ class MidiOutput:
         status = 0xC0 | ((channel - 1) & 0x0F)
         prog   = program & 0x7F
         if self._backend == "coremidi":
-            _coremidi_send(self._coremidi_dest, bytes([status, prog]))
+            if self._coremidi_is_virtual:
+                _coremidi_send_virtual(bytes([status, prog]))
+            else:
+                _coremidi_send(self._coremidi_dest, bytes([status, prog]))
         elif self._backend == "rtmidi":
             try:
                 self._rtmidi_out.send_message([status, prog])
@@ -354,7 +392,10 @@ class MidiOutput:
         status = 0xB0 | ((channel - 1) & 0x0F)
         if self._backend == "coremidi":
             try:
-                _coremidi_send(self._coremidi_dest, bytes([status, 123, 0]))
+                if self._coremidi_is_virtual:
+                    _coremidi_send_virtual(bytes([status, 123, 0]))
+                else:
+                    _coremidi_send(self._coremidi_dest, bytes([status, 123, 0]))
             except Exception:
                 pass
         elif self._backend == "rtmidi" and self._rtmidi_out:
@@ -373,6 +414,8 @@ class MidiOutput:
     @property
     def is_open(self) -> bool:
         if self._backend == "coremidi":
+            if self._coremidi_is_virtual:
+                return _has_virtual()
             return self._coremidi_dest is not None
         if self._backend == "rtmidi":
             return self._rtmidi_out is not None
