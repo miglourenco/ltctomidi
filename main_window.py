@@ -466,7 +466,7 @@ class MainWindow:
                  font=_F_UI).pack(side="left")
         self._ch_var = tk.StringVar(value=str(self.settings.audio_channel))
         self._ch_combo = ttk.Combobox(ar, textvariable=self._ch_var,
-                                      width=5, state="readonly", font=_F_UI)
+                                      width=18, state="readonly", font=_F_UI)
         self._ch_combo.pack(side="left", padx=4)
         self._sr_force_var = tk.BooleanVar(value=False)
         ttk.Checkbutton(ar, text="SR Force:", variable=self._sr_force_var,
