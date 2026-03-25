@@ -13,6 +13,8 @@ A Windows and macOS desktop application that reads **SMPTE LTC (Linear Timecode)
 - **Windows and macOS** — single codebase, native feel on both platforms
 - Reads LTC from any audio input (ASIO, WDM, MME on Windows — CoreAudio on macOS)
 - **ASIO support** — works with SoundGrid Driver and other ASIO interfaces
+- **ASIO channel names** — channel dropdown shows the real driver names (e.g. "SoundGrid 1")
+- **Built-in virtual MIDI port on macOS** — appears as a MIDI input in any app, no extra software needed
 - Software BMC/LTC decoder — no external libraries needed
 - Fires MIDI Program Change on any channel (1–16) at frame-accurate timecodes
 - Supports 24, 25, 29.97, 30, 50, 59.94 and 60 fps
@@ -78,11 +80,21 @@ Smart App Control does not have a "Run anyway" option. To run unsigned apps you 
 
 ## Recommended Setup
 
-### Virtual MIDI Port — loopMIDI
+### macOS — Built-in Virtual MIDI Port
 
-To send MIDI Program Changes to software on the same machine (DAW, Waves LV1, etc.) you need a **virtual MIDI loopback driver**.
+On macOS, LTC to MIDI creates its own virtual MIDI port automatically. No extra software needed.
 
-We recommend **loopMIDI** by Tobias Erichsen — it is free and widely used in professional audio.
+1. Open **LTC to MIDI**
+2. In the **MIDI Output** dropdown, select **LTC to MIDI (virtual)**
+3. In your target software (DAW, Waves LV1, etc.), set the MIDI input to **LTC to MIDI**
+
+That's it — no IAC Driver configuration required.
+
+### Windows — loopMIDI
+
+On Windows, a virtual MIDI loopback driver is needed to route MIDI between apps on the same machine.
+
+We recommend **loopMIDI** by Tobias Erichsen — free and widely used in professional audio.
 
 1. Download loopMIDI: **https://www.tobias-erichsen.de/software/loopmidi.html**
 2. Install and open loopMIDI
@@ -94,7 +106,7 @@ We recommend **loopMIDI** by Tobias Erichsen — it is free and widely used in p
 
 ### Physical MIDI Interface
 
-If you prefer to send MIDI over a physical cable, connect a USB MIDI interface and select it directly as the MIDI Output — no loopMIDI needed.
+On either platform, connect a USB MIDI interface and select it directly as the MIDI Output — no virtual port needed.
 
 ---
 
@@ -111,9 +123,9 @@ Audio source (playback / timecode track)
         ▼
   LTC to MIDI (this app)
         │
-        │  MIDI Program Change
-        ▼
-  loopMIDI virtual port  ──►  Waves LV1 / DAW / any MIDI device
+        ├─── macOS: LTC to MIDI (virtual) ──►  Waves LV1 / DAW / any CoreMIDI app
+        │
+        └─── Windows: loopMIDI port        ──►  Waves LV1 / DAW / any MIDI app
 ```
 
 ---
@@ -123,7 +135,9 @@ Audio source (playback / timecode track)
 1. **Connect** your LTC source to an audio input on your interface
 2. Open **LTC to MIDI**
 3. Select the **Audio Input** device and the channel carrying the LTC signal
-4. Select the **MIDI Output** port (loopMIDI virtual port or physical interface)
+4. Select the **MIDI Output** port:
+   - **macOS** → select **LTC to MIDI (virtual)** — no extra setup needed
+   - **Windows** → select your loopMIDI port or physical MIDI interface
 5. Click **▶ START**
 6. The timecode display turns bright green when LTC is detected
 7. Add cues to the list — set the timecode, MIDI channel, and Program Change number
