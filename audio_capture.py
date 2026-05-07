@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import queue
 import sys
+import time
 from typing import Any, Dict, List, Optional
 
 import numpy as np
@@ -113,6 +114,7 @@ class AudioCapture:
         self._channel: int = 0          # 0-based
         self._sample_rate: int = 48000
         self._running: bool = False
+        self._last_callback_time: float = 0.0
 
     # ── configuration ─────────────────────────────────────────────────────────
 
@@ -135,29 +137,43 @@ class AudioCapture:
 
         import sounddevice as sd
 
-        dev_info = sd.query_devices(self._device_index)
-        n_ch = int(dev_info["max_input_channels"])
-
-        if self._channel >= n_ch:
-            raise ValueError(
-                f"Channel {self._channel + 1} not available — "
-                f"device '{dev_info['name']}' has {n_ch} input channel(s)"
-            )
-
         self._decoder = LTCDecoder(self._sample_rate)
         self._decoder.on_timecode = self._on_timecode
 
-        self._stream = sd.InputStream(
-            device=self._device_index,
-            channels=n_ch,
-            samplerate=self._sample_rate,
-            blocksize=512,
-            dtype="float32",
-            callback=self._audio_callback,
-            latency="low",
-        )
+        for attempt in range(2):
+            try:
+                dev_info = sd.query_devices(self._device_index)
+                n_ch = int(dev_info["max_input_channels"])
+                if self._channel >= n_ch:
+                    raise ValueError(
+                        f"Channel {self._channel + 1} not available — "
+                        f"device '{dev_info['name']}' has {n_ch} input channel(s)"
+                    )
+                self._stream = sd.InputStream(
+                    device=self._device_index,
+                    channels=n_ch,
+                    samplerate=self._sample_rate,
+                    blocksize=512,
+                    dtype="float32",
+                    callback=self._audio_callback,
+                    latency="low",
+                )
+                self._stream.start()
+                break  # success
+            except sd.PortAudioError:
+                if attempt == 0:
+                    # Driver may have reset (e.g. SoundGrid connecting another app).
+                    # Re-initialise PortAudio once and retry.
+                    try:
+                        sd._terminate()
+                        sd._initialize()
+                    except Exception:
+                        pass
+                    continue
+                raise  # second attempt also failed — propagate to caller
+
         self._running = True
-        self._stream.start()
+        self._last_callback_time = time.monotonic()
 
         # For ASIO devices the driver controls the sample rate; the rate we
         # requested may differ from what the stream actually opened at.
@@ -170,6 +186,7 @@ class AudioCapture:
 
     def stop(self) -> None:
         self._running = False
+        self._last_callback_time = 0.0
         if self._stream is not None:
             try:
                 self._stream.stop()
@@ -184,6 +201,23 @@ class AudioCapture:
     @property
     def is_running(self) -> bool:
         return self._running
+
+    @property
+    def stream_active(self) -> bool:
+        """False if the underlying PortAudio stream has stopped unexpectedly (e.g. driver reset)."""
+        if not self._running or self._stream is None:
+            return False
+        try:
+            return bool(self._stream.active)
+        except Exception:
+            return False
+
+    @property
+    def callback_stalled(self) -> bool:
+        """True if no audio callback received for 3+ s — detects silent ASIO death on Windows."""
+        if not self._running or self._last_callback_time == 0.0:
+            return False
+        return time.monotonic() - self._last_callback_time > 3.0
 
     @property
     def actual_sample_rate(self) -> Optional[int]:
@@ -214,6 +248,7 @@ class AudioCapture:
 
     def _audio_callback(self, indata: np.ndarray, frames: int, time_info, status) -> None:
         """Called from PortAudio real-time thread. Must not block."""
+        self._last_callback_time = time.monotonic()
         if not self._running or self._decoder is None:
             return
         try:

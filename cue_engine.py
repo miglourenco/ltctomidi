@@ -28,6 +28,7 @@ class CueEngine:
         self._cue_list: CueList = CueList()
         self._fps: float = 25.0
         self._last_frame: Optional[int] = None
+        self._cue_frames: dict = {}   # cue_id → pre-computed frame number
 
         # Optional callbacks (called from main thread)
         self.on_cue_fired:  Optional[Callable[[Cue], None]] = None
@@ -39,14 +40,21 @@ class CueEngine:
         self._cue_list = cue_list
         self._cue_list.reset_fired_flags()
         self._last_frame = None
+        self._recompute_cue_frames()
 
     def set_fps(self, fps: float) -> None:
-        self._fps = fps
+        if fps != self._fps:
+            self._fps = fps
+            self._recompute_cue_frames()
 
     def reset(self) -> None:
         """Reset all fired flags (call on stop/rewind)."""
         self._cue_list.reset_fired_flags()
         self._last_frame = None
+
+    def _recompute_cue_frames(self) -> None:
+        """Pre-compute absolute frame numbers for every cue at the current FPS."""
+        self._cue_frames = {c.id: c.timecode_as_frames(self._fps) for c in self._cue_list.cues}
 
     # ── main processing entry point ───────────────────────────────────────────
 
@@ -59,17 +67,23 @@ class CueEngine:
         fps = tc.fps if tc.fps else self._fps
         current_frame = tc.to_frame_number()
 
+        # Recompute cached frame numbers if FPS changed mid-session
+        if fps != self._fps:
+            self._fps = fps
+            self._recompute_cue_frames()
+
         self._handle_backwards_jump(current_frame, fps)
         self._last_frame = current_frame
 
         fired: List[Cue] = []
+        tol = self.tolerance_frames
         for cue in self._cue_list.cues:
             if not cue.enabled or cue.fired:
                 continue
-            cue_frame = cue.timecode_as_frames(fps)
+            cue_frame = self._cue_frames.get(cue.id, -1)
             if cue_frame < 0:
                 continue
-            if abs(current_frame - cue_frame) <= self.tolerance_frames:
+            if abs(current_frame - cue_frame) <= tol:
                 self._fire(cue)
                 fired.append(cue)
 

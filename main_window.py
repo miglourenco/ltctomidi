@@ -34,7 +34,7 @@ from models import AppSettings, Cue, CueList
 
 # ── Version / update check ────────────────────────────────────────────────────
 
-_VERSION      = "1.6.0"
+_VERSION      = "1.7.0"
 _RELEASES_API = "https://api.github.com/repos/miglourenco/ltctomidi/releases/latest"
 _RELEASES_URL = "https://github.com/miglourenco/ltctomidi/releases"
 
@@ -277,6 +277,7 @@ class MainWindow:
 
         # UI state
         self._running        = False
+        self._recovering     = False   # True while waiting to auto-restart after stream death
         self._current_tc:    Optional[Timecode] = None
         self._current_file:  Optional[str]      = None
         self._flash_after:   Optional[str]      = None
@@ -284,6 +285,7 @@ class MainWindow:
         self._audio_devices: list               = []
         self._midi_ports:    list               = []
         self._detected_sr:   int                = settings.sample_rate
+        self._last_signal_ok: Optional[bool]    = None   # track status label state
 
         self._apply_theme()
         self._build_ui()
@@ -771,10 +773,12 @@ class MainWindow:
     def _stop(self) -> None:
         if not self._running:
             return
+        self._recovering = False
         self._audio.stop()
         self._midi.close()
         self._running = False
         self._engine.reset()
+        self._last_signal_ok = None   # force label refresh on next start
 
         self._start_btn.config(state="normal",   bg=_GO_BG,  fg="#FFFFFF")
         self._stop_btn.config(state="disabled",  bg=_ST_DIS, fg="#555555")
@@ -784,12 +788,52 @@ class MainWindow:
         self._ltc_status.config(text="● No signal", fg=_FG_DIM)
         self._midi_status.config(text="● Not open",  fg=_FG_DIM)
 
+    def _auto_restart(self) -> None:
+        """Called 2 s after a mid-session stream death to re-open the audio device."""
+        if not self._running:
+            self._recovering = False
+            return
+        audio_idx = self._audio_combo.current()
+        if audio_idx < 0 or not self._audio_devices:
+            self._recovering = False
+            self._stop()
+            return
+        dev = self._audio_devices[audio_idx]
+        channel = max(0, self._ch_combo.current())
+        sr = self._get_sample_rate()
+        try:
+            self._audio.configure(dev["index"], channel, sr)
+            self._audio.start()
+            self._ltc_status.config(text="● Restarted OK", fg=_FG_OK)
+        except Exception as exc:
+            self._ltc_status.config(text=f"● Restart failed — {str(exc)[:28]}", fg=_FG_ERR)
+            self._running = False
+            self._midi.close()
+            self._engine.reset()
+            self._start_btn.config(state="normal",  bg=_GO_BG,  fg="#FFFFFF")
+            self._stop_btn.config(state="disabled", bg=_ST_DIS, fg="#555555")
+            self._tap_btn.config(state="disabled")
+            self._tc_label.config(text="--:--:--:--", fg=_TC_OFF)
+        finally:
+            self._recovering = False
+
     # ══════════════════════════════════════════════════════════════════════════
     # Timecode poll loop (main thread, ~25 Hz)
     # ══════════════════════════════════════════════════════════════════════════
 
     def _poll_queue(self) -> None:
-        if self._running:
+        if self._running and not self._recovering:
+            # Detect unexpected stream death (e.g. SoundGrid driver reset mid-session)
+            if not self._audio.stream_active or self._audio.callback_stalled:
+                self._recovering = True
+                self._last_signal_ok = None   # force label refresh after recovery
+                self._audio.stop()
+                self._ltc_status.config(text="● Driver reset — restarting…", fg="#FF9800")
+                self._tc_label.config(fg=_TC_OFF)
+                self.root.after(2000, self._auto_restart)
+                self.root.after(40, self._poll_queue)
+                return
+
             latest: Optional[Timecode] = None
             try:
                 while True:
@@ -809,10 +853,15 @@ class MainWindow:
                     self._fps_label.config(text=f"FPS: {fps:.2f}")
 
             self._last_tc_time += 1
-            if self._audio.signal_present:
+            signal_ok = self._audio.signal_present
+            no_signal_timeout = not signal_ok and self._last_tc_time > 25
+            # Only call .config() when state actually changes
+            if signal_ok and self._last_signal_ok is not True:
+                self._last_signal_ok = True
                 self._ltc_status.config(text="● LTC OK", fg=_FG_OK)
-                self._tc_label.config(fg=_TC_ON)   # ← restore bright green on recovery
-            elif self._last_tc_time > 25:           # ~1 s without TC
+                self._tc_label.config(fg=_TC_ON)
+            elif no_signal_timeout and self._last_signal_ok is not False:
+                self._last_signal_ok = False
                 self._tc_label.config(fg=_TC_OFF)
                 self._ltc_status.config(text="● No signal", fg=_FG_ERR)
 
@@ -942,16 +991,21 @@ class MainWindow:
     # ── CueEngine callbacks ───────────────────────────────────────────────────
 
     def _on_cue_fired(self, cue: Cue) -> None:
-        self._refresh_tree()
+        # Update only the fired row's tag — avoids rebuilding the entire tree
+        iid = str(cue.id)
+        try:
+            tags = list(self._tree.item(iid, "tags"))
+            if "fired" not in tags:
+                tags.append("fired")
+                self._tree.item(iid, tags=tags)
+            self._tree.see(iid)
+        except Exception:
+            self._refresh_tree()  # fallback if iid not found
         self._last_cue_lbl.config(
             text=f"#{cue.id}  {cue.label}\nPC {cue.program} → Ch {cue.channel}",
             fg=_FG_OK,
         )
         self._flash_midi(f"Fired: {cue.label}  PC {cue.program}")
-        try:
-            self._tree.see(str(cue.id))
-        except Exception:
-            pass
 
     def _on_midi_error(self, msg: str) -> None:
         self._midi_status.config(text=f"● ERR: {msg[:30]}", fg=_FG_ERR)

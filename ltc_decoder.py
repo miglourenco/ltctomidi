@@ -110,14 +110,74 @@ class LTCDecoder:
         Feed a 1-D float32 mono array.
         Returns any Timecodes decoded during this call (usually 0 or 1).
         Also invokes self.on_timecode for each decoded frame.
+
+        Implementation: numpy bulk zero-crossing detection — only the crossing
+        events (~4 000/s at 48 kHz LTC 25 fps) are processed in Python,
+        instead of iterating all 48 000 samples/s individually.
         """
         results: List[Timecode] = []
-        for s in samples:
-            tc = self._step(float(s))
+        n = len(samples)
+        if n == 0:
+            return results
+
+        # Sign array for this block (+1 / -1, no zeros)
+        signs = np.sign(samples).astype(np.int8)
+        signs[signs == 0] = 1
+
+        # Prepend the carry-over sign from the previous block so crossings
+        # at position 0 of this block are detected correctly.
+        prev_s = np.int8(1 if self._prev_sign >= 0 else -1)
+        extended = np.empty(n + 1, dtype=np.int8)
+        extended[0] = prev_s
+        extended[1:] = signs
+
+        # Indices in `extended` where a sign change occurs.
+        # extended[xi] → extended[xi+1] is a crossing; extended[xi+1] == signs[xi].
+        xing_indices = np.flatnonzero(np.diff(extended))
+
+        self._pos += n
+
+        if len(xing_indices) == 0:
+            self._samples_since_xing += n
+            self._no_xing_count += n
+            if self._no_xing_count > self.sample_rate // 2:
+                self._signal_present = False
+                if self._calibrated:
+                    self._calibrated = False
+                    self._calib_buf.clear()
+                    self._bits.clear()
+                    self._sync_reg = 0
+                    self._pending_short = False
+            self._prev_sign = int(signs[-1])
+            return results
+
+        # At least one crossing — signal is present
+        self._signal_present = True
+        self._no_xing_count = 0
+
+        # Interval counting matches the original per-sample logic:
+        #   • First crossing at extended-index xi:
+        #       interval = _samples_since_xing + xi + 1
+        #       (xi samples elapsed in this block before the crossing sample, +1 for it)
+        #   • Subsequent crossing at xi_curr (previous at xi_prev):
+        #       interval = xi_curr - xi_prev
+        prev_xi = -1
+        for xi in xing_indices:
+            if prev_xi < 0:
+                interval = self._samples_since_xing + int(xi) + 1
+            else:
+                interval = int(xi) - prev_xi
+            prev_xi = int(xi)
+
+            tc = self._on_crossing(interval)
             if tc is not None:
                 results.append(tc)
                 if self.on_timecode:
                     self.on_timecode(tc)
+
+        # Accumulate samples after the last crossing for the next block
+        self._samples_since_xing = n - prev_xi - 1
+        self._prev_sign = int(signs[-1])
         return results
 
     def reset(self) -> None:
